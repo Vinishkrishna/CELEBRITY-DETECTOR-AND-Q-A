@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmops-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llmops-app
+  template:
+    metadata:
+      labels:
+        app: llmops-app
+    spec:
+      containers:
+      - name: llmops-app
+        image: us-central1-docker.pkg.dev/gen-lang-client-0729539659/llmops-repo/llmops-app:latest #fetching image from google artifact registry, registry/project ID/artifact registry(repo name)/image name
+        ports:
+        - containerPort: 5000 #give same port on which flask app is running
+        env:
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llmops-secrets
+              key: GROQ_API_KEY
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: llmops-service
+spec:
+  selector:
+    app: llmops-app #give same name as in service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: LoadBalancer #for fully public app,it is better than NodePort
