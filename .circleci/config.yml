@@ -1,0 +1,65 @@
+version: 2.1 #CircleCI config version.
+
+executors: #Defines a reusable executor named docker-executor
+  docker-executor: #Note: The container must have any CLI tools you call (docker client, kubectl) or you must install them in the job steps.
+    docker: #his runs job steps inside that Docker image (so gcloud is available). working_directory is where your code will be placed.
+      - image: google/cloud-sdk:latest
+    working_directory: ~/repo
+
+jobs:
+  checkout_code: #checkout_code — get the repo.(pulling code from github and using it inside your google container)
+    executor: docker-executor #runs on the google/cloud-sdk image.
+    steps:
+      - checkout #gets repository files.
+
+  build_docker_image: #build_docker_image — authenticate to GCP, build a Docker image and push it to us-central1-docker.pkg.dev/...:latest (GAR)
+    executor: docker-executor #runs on the google/cloud-sdk image.
+    steps:
+      - checkout #gets repository files.
+      - setup_remote_docker #setup_remote_docker — provisions a remote Docker engine (Docker-in-Docker) so the job can run docker build and docker push. The job still needs a Docker client in the container.(want the permission to build images inside circleci-write this code set).
+      - run:
+          name: Authenticate with google cloud
+          command: | #GCLOUD_SERVICE_KEY is expected to be a base64-encoded service-account JSON. This decodes it to gcp-key.json and activates the service account.gcloud auth configure-docker ... edits your Docker config to allow pushing to Artifact Registry (the host us-central1-docker.pkg.dev indicates Artifact Registry).Encode it in base64 & store it in the form of environment variables i.e being decoded again converting it to JSON.This is done because we can't push our gcp key to github.This is copied and pasted inside circle ci environment variable.Form that w decoded it again to gcp.That's how we protected it from being exposed to public platform. In the third command chaange accorting to your region
+              echo "$GCLOUD_SERVICE_KEY" | base64 --decode > gcp-key.json 
+              gcloud auth activate-service-account --key-file=gcp-key.json
+              gcloud auth configure-docker us-central1-docker.pkg.dev || gcloud auth configure-docker
+              
+      - run:
+          name: Build and Push Image
+          command: | #Builds and tags the image, then pushes it to the Artifact Registry repository llmops-repo,if you copy path from gar this look near to below code,the last second thing GAR name,last is the image name make sure it is same in deployment.yaml  
+              docker build -t us-central1-docker.pkg.dev/$GOOGLE_PROJECT_ID/llmops-repo/llmops-app:latest .
+              docker push us-central1-docker.pkg.dev/$GOOGLE_PROJECT_ID/llmops-repo/llmops-app:latest
+
+  deploy_to_gke: #deploy_to_gke — get kubeconfig for the GKE cluster and apply the kubernetes-deployment.yaml, then force a restart of the deployment so pods pick up the new image.
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker #to run docker commands
+      - run:
+          name: Authenticate with google cloud
+          command: |
+              echo "$GCLOUD_SERVICE_KEY" | base64 --decode > gcp-key.json
+              gcloud auth activate-service-account --key-file=gcp-key.json
+              gcloud auth configure-docker us-central1-docker.pkg.dev || gcloud auth configure-docker
+      
+      - run:
+          name: Configure GKE
+          command: | #This fetches cluster credentials and configures kubectl to talk to the cluster.GKE_CLUSTER is the cluster name we will fetch it form the environment variables,same for region and project ID
+              gcloud container clusters get-credentials $GKE_CLUSTER --region $GOOGLE_COMPUTE_REGION --project $GOOGLE_PROJECT_ID
+      - run:
+          name: Deploy to GKE
+          command: | #Applies the YAML. --validate=false disables client-side validation (useful with CRDs or server-only fields).Second command:->Forces the deployment to restart pods (so they will pull the new image).On second command everytime new docker image is used each time pipeline runs
+              kubectl apply -f kubernetes-deployment.yaml --validate=false 
+              kubectl rollout restart deployment llmops-app 
+#In the first code->kubernetes.deployment.yaml name should be same as you write,then llmops-app should be same as you give in kubernetes.deployment.yaml file
+workflows: #Workflow ensures jobs run in order (checkout_code → build_docker_image → deploy_to_gke
+  version: 2
+  deploy_pipeline:
+    jobs:
+      - checkout_code
+      - build_docker_image:
+          requires:
+            - checkout_code #docker image will only run if checkout_code is successful
+      - deploy_to_gke:
+          requires:
+            - build_docker_image #deploy_to_gke will only run if build_docker_image is successful
