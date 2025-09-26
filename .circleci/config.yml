@@ -18,6 +18,10 @@ jobs:
       - checkout #gets repository files.
       - setup_remote_docker #setup_remote_docker — provisions a remote Docker engine (Docker-in-Docker) so the job can run docker build and docker push. The job still needs a Docker client in the container.(want the permission to build images inside circleci-write this code set).
       - run:
+          name: Install Docker CLI
+          command: |
+            apt-get update && apt-get install -y docker.io
+      - run:
           name: Authenticate with google cloud
           command: | #GCLOUD_SERVICE_KEY is expected to be a base64-encoded service-account JSON. This decodes it to gcp-key.json and activates the service account.gcloud auth configure-docker ... edits your Docker config to allow pushing to Artifact Registry (the host us-central1-docker.pkg.dev indicates Artifact Registry).Encode it in base64 & store it in the form of environment variables i.e being decoded again converting it to JSON.This is done because we can't push our gcp key to github.This is copied and pasted inside circle ci environment variable.Form that w decoded it again to gcp.That's how we protected it from being exposed to public platform. In the third command chaange accorting to your region
               echo "$GCLOUD_SERVICE_KEY" | base64 --decode > gcp-key.json 
