@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: llmops-app
-        image: us-central1-docker.pkg.dev/gen-lang-client-0729539659/llmops-repo/llmops-app:latest #fetching image from google artifact registry, registry/project ID/artifact registry(repo name)/image name
+        image: us-central1-docker.pkg.dev/mlops-new-1/llmops-repo/llmops-app:latest #fetching image from google artifact registry, registry/project ID/artifact registry(repo name)/image name
         ports:
         - containerPort: 5000 #give same port on which flask app is running
         env:
